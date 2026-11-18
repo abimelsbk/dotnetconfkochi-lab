@@ -8,15 +8,15 @@ using Microsoft.EntityFrameworkCore;
 namespace ApiSecurityLab.Api.Controllers;
 
 // ============================================================
-//  VULNERABLE VERSION (branch: lab-vulnerable)
-//  This controller has a Broken Object Level Authorization bug.
-//  For learning on localhost only. Never deploy this code.
+//  SECURE VERSION (branch: lab-secure)
+//  GET uses Fix 1: filter the query by ID AND owner.
+//  PUT uses Fix 2: resource-based authorization with a handler.
 // ============================================================
 
 [ApiController]
 [Route("api/invoices")]
-[Authorize] // Only checks "is the caller logged in?"
-public class InvoicesController(AppDbContext db) : ControllerBase
+[Authorize]
+public class InvoicesController(AppDbContext db, IAuthorizationService authz) : ControllerBase
 {
     // GET /api/invoices/mine  -> SAFE: filtered by the caller
     [HttpGet("mine")]
@@ -29,25 +29,32 @@ public class InvoicesController(AppDbContext db) : ControllerBase
         return Ok(invoices);
     }
 
-    // GET /api/invoices/{id}  -> VULNERABLE
+    // FIX 1: ask the database for this ID AND this owner.
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetInvoice(int id)
     {
-        var invoice = await db.Invoices.FindAsync(id);
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        var invoice = await db.Invoices
+            .SingleOrDefaultAsync(i => i.Id == id && i.OwnerId == userId);
+
+        // Not found and not yours get the same answer.
+        // The attacker can't even tell that invoice 202 exists.
         if (invoice is null) return NotFound();
 
-        // BUG: nobody checks who owns this invoice.
         return Ok(invoice);
     }
 
-    // PUT /api/invoices/{id}  -> VULNERABLE
+    // FIX 2: load the invoice, then ask the authorization service.
     [HttpPut("{id:int}")]
     public async Task<IActionResult> UpdateInvoice(int id, UpdateInvoiceRequest request)
     {
         var invoice = await db.Invoices.FindAsync(id);
         if (invoice is null) return NotFound();
 
-        // BUG: same mistake on write. Alice can change Bob's invoice.
+        var result = await authz.AuthorizeAsync(User, invoice, "InvoiceOwner");
+        if (!result.Succeeded) return NotFound(); // use Forbid() if you prefer 403
+
         invoice.Description = request.Description;
         invoice.Amount = request.Amount;
         await db.SaveChangesAsync();
