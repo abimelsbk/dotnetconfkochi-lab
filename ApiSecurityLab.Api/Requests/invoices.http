@@ -1,0 +1,32 @@
+@baseUrl = http://localhost:5080
+@aliceToken = PASTE_ALICE_TOKEN_HERE
+@bobToken = PASTE_BOB_TOKEN_HERE
+
+### 1. Alice reads her own invoice (expect 200)
+GET {{baseUrl}}/api/invoices/101
+Authorization: Bearer {{aliceToken}}
+
+### 2. Alice lists her invoices (expect only 101 and 102)
+GET {{baseUrl}}/api/invoices/mine
+Authorization: Bearer {{aliceToken}}
+
+### 3. ATTACK: Alice reads Bob's invoice (vulnerable: 200, secure: 404)
+GET {{baseUrl}}/api/invoices/202
+Authorization: Bearer {{aliceToken}}
+
+### 4. ATTACK: Alice changes Bob's invoice (vulnerable: 200, secure: 404)
+PUT {{baseUrl}}/api/invoices/202
+Authorization: Bearer {{aliceToken}}
+Content-Type: application/json
+
+{
+  "description": "Changed by Alice",
+  "amount": 1
+}
+
+### 5. Bob reads his invoice (expect 200, check the amount)
+GET {{baseUrl}}/api/invoices/202
+Authorization: Bearer {{bobToken}}
+
+### 6. No token at all (expect 401)
+GET {{baseUrl}}/api/invoices/101

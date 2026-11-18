@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="ApiSecurityLab.Api/ApiSecurityLab.Api.csproj" />
+  <Project Path="ApiSecurityLab.Tests/ApiSecurityLab.Tests.csproj" />
+</Solution>

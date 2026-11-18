@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kochi Invoices (Demo)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #1d2430; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+    h1 { margin: 0; }
+    select, input, button { font: inherit; }
+    ul { list-style: none; padding: 0; }
+    li button { width: 100%; text-align: left; padding: 10px 12px; margin: 4px 0; cursor: pointer;
+                border: 1px solid #c9d1dc; border-radius: 6px; background: #f7f9fc; }
+    li button:hover { background: #eaf0f8; }
+    #detail { border: 1px solid #c9d1dc; padding: 16px; border-radius: 8px; margin-top: 16px; }
+    #detail label { display: block; margin: 8px 0; }
+    #status { font-family: ui-monospace, monospace; background: #eef1f5; padding: 8px 12px; border-radius: 6px; }
+    .warn { background: #fff4d6; border: 1px solid #e8c766; padding: 8px 12px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Kochi Invoices</h1>
+    <label>Logged in as
+      <select id="user">
+        <option value="alice">Alice</option>
+        <option value="bob">Bob</option>
+      </select>
+    </label>
+  </header>
+
+  <p id="token-warning" class="warn" hidden>
+    No tokens found. Copy wwwroot/demo-tokens.example.js to wwwroot/demo-tokens.js and paste your tokens.
+  </p>
+
+  <h2>My invoices</h2>
+  <ul id="list"></ul>
+
+  <section id="detail" hidden>
+    <h2>Invoice #<span id="d-id"></span></h2>
+    <p><b>Customer:</b> <span id="d-customer"></span></p>
+    <p><b>Owner:</b> <span id="d-owner"></span></p>
+    <form id="edit">
+      <label>Description <input id="d-desc"></label>
+      <label>Amount (Rs) <input id="d-amount" type="number"></label>
+      <button type="submit">Save</button>
+    </form>
+  </section>
+
+  <p id="status">Ready</p>
+
+  <script src="demo-tokens.js"></script>
+  <script>
+    const userSel = document.getElementById("user");
+    let currentId = null;
+
+    if (!window.DEMO_TOKENS) {
+      document.getElementById("token-warning").hidden = false;
+      window.DEMO_TOKENS = {};
+    }
+
+    function authHeaders() {
+      return {
+        "Authorization": "Bearer " + window.DEMO_TOKENS[userSel.value],
+        "Content-Type": "application/json"
+      };
+    }
+    function status(text) { document.getElementById("status").textContent = text; }
+
+    // 1. Load ONLY my invoices. The UI never shows anyone else's.
+    async function loadList() {
+      document.getElementById("detail").hidden = true;
+      const res = await fetch("/api/invoices/mine", { headers: authHeaders() });
+      status("GET /api/invoices/mine -> " + res.status);
+      const list = document.getElementById("list");
+      list.replaceChildren();
+      if (!res.ok) return;
+      for (const inv of await res.json()) {
+        const btn = document.createElement("button");
+        btn.textContent = "#" + inv.id + "  " + inv.description;
+        btn.onclick = () => openInvoice(inv.id);
+        const li = document.createElement("li");
+        li.appendChild(btn);
+        list.appendChild(li);
+      }
+    }
+
+    // 2. Open one invoice by ID. THIS is the request we attack in Burp.
+    async function openInvoice(id) {
+      const res = await fetch("/api/invoices/" + id, { headers: authHeaders() });
+      status("GET /api/invoices/" + id + " -> " + res.status);
+      if (!res.ok) { document.getElementById("detail").hidden = true; return; }
+      const inv = await res.json();
+      currentId = inv.id;
+      document.getElementById("d-id").textContent = inv.id;
+      document.getElementById("d-customer").textContent = inv.customerName;
+      document.getElementById("d-owner").textContent = inv.ownerId;
+      document.getElementById("d-desc").value = inv.description;
+      document.getElementById("d-amount").value = inv.amount;
+      document.getElementById("detail").hidden = false;
+    }
+
+    // 3. Save changes with PUT.
+    document.getElementById("edit").onsubmit = async (e) => {
+      e.preventDefault();
+      const body = {
+        description: document.getElementById("d-desc").value,
+        amount: Number(document.getElementById("d-amount").value)
+      };
+      const res = await fetch("/api/invoices/" + currentId,
+        { method: "PUT", headers: authHeaders(), body: JSON.stringify(body) });
+      status("PUT /api/invoices/" + currentId + " -> " + res.status);
+      if (res.ok) loadList();
+    };
+
+    userSel.onchange = loadList;
+    loadList();
+  </script>
+</body>
+</html>
